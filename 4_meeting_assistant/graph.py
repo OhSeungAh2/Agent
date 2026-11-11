@@ -12,6 +12,7 @@
 from typing import TypedDict
 from unittest import result
 from langgraph.graph import StateGraph, START, END
+from db import save_meeting
 
 
 # 회의 상태를 나타내는 TypedDict 정의
@@ -87,6 +88,23 @@ def compose_result(state: MeetingState) -> MeetingState:
 def route_after_validate(state: MeetingState) -> str:
     return "error" if state.get("error") else "ok"
 
+def route_after_compose(state: MeetingState) -> str:
+    return "error" if state.get("error") else "save"
+
+# DB에 저장하는 노드
+# 회의 정보를 DB에 저장하고, 저장 결과를 최종 결과에 반영위해 만듦
+def save_to_db(state: MeetingState) -> MeetingState:
+    meeting_id = save_meeting(
+        title = state["title"],
+        people = (state.get('people') or "").split(","),
+        notes = state["notes"],
+        summary = state["summary"],
+        actions = state["actions"],
+        result = state["result"]
+    )
+    result = state["result"] + f"\n\nDB 저장완료 | meeting_id: {meeting_id}"
+    return {**state, "meeting_id": meeting_id, "result": result}
+
 
 # build_meeting_graph 함수: 그래프를 정의하는 함수임
 def build_meeting_graph():
@@ -97,6 +115,7 @@ def build_meeting_graph():
     graph.add_node("summarize", summarize_notes)
     graph.add_node("extract_actions", extract_actions)
     graph.add_node("compose", compose_result)
+    graph.add_node("save_to_db", save_to_db)
 
     graph.add_edge(START, "validate")
     graph.add_conditional_edges(
@@ -105,6 +124,9 @@ def build_meeting_graph():
     graph.add_edge("create_meeting", "summarize")
     graph.add_edge("summarize", "extract_actions")
     graph.add_edge("extract_actions", "compose")
+    graph.add_conditional_edges(
+        "compose", route_after_compose, {"save": "save_to_db", "error": END}
+    )
     graph.add_edge("compose", END)
 
     return graph.compile()

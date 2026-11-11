@@ -6,11 +6,22 @@
 
 # 실행방법: uvicorn fastapi_back:app --reload --port 8000
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
 from graph import run_meeting_pipeline
+from db import init_db
 
-app = FastAPI(title="회의 관리 API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # db 초기화 시작
+    init_db()
+    # db 초기화 완료 후 앱 실행
+    yield
+
+
+app = FastAPI(title="회의 관리 API", lifespan=lifespan)
 
 # 요청 데이터 모델 정의
 class MeetingRequest(BaseModel):
