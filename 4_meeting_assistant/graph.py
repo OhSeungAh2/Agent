@@ -96,7 +96,7 @@ def route_after_compose(state: MeetingState) -> str:
 def save_to_db(state: MeetingState) -> MeetingState:
     meeting_id = save_meeting(
         title = state["title"],
-        people = (state.get('people') or "").split(","),
+        people = (state.get('people') or "").strip(""),
         notes = state["notes"],
         summary = state["summary"],
         actions = state["actions"],

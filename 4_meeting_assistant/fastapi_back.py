@@ -7,10 +7,10 @@
 # 실행방법: uvicorn fastapi_back:app --reload --port 8000
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from graph import run_meeting_pipeline
-from db import init_db
+from db import (init_db, list_meetings, format_meetings_markdown, get_meeting)
 
 
 @asynccontextmanager
@@ -81,3 +81,22 @@ def run_pipeline(request: PipelineRequest):
             notes = request.notes
         )
     }
+
+@app.get("/meetings")
+def meetings_list(limit: int = 10):
+    # list_meetings : 이건 db.py에 정의되어 있어야 함
+    rows = list_meetings(limit=limit)
+    return {
+        "items": rows,
+        "markdown": format_meetings_markdown(rows),
+        "result": format_meetings_markdown(rows)
+    }
+
+@app.get("/meetings/{meeting_id}")
+def meetings_detail(meeting_id: int):
+    # get_meeting : 이건 db.py에 정의되어 있어야 함
+    row = get_meeting(meeting_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"회의 #{meeting_id}를 찾을 수 없습니다.")
+    detail = format_meetings_markdown(row)
+    return {"item": row, "markdown": detail, "result": detail}
