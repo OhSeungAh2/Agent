@@ -1,0 +1,15 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\qwen_asr_test\\.venv\\Scripts\\python.exe",
+  "python.envFile": "${workspaceFolder}\\.env",
+  "python.terminal.activateEnvironment": true,
+  "terminal.integrated.profiles.windows": {
+    "Command Prompt (project .venv)": {
+      "path": "${env:ComSpec}",
+      "args": [
+        "/K",
+        "${workspaceFolder}\\qwen_asr_test\\.venv\\Scripts\\activate.bat"
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "Command Prompt (project .venv)"
+}

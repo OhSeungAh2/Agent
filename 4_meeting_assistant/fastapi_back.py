@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from graph import run_meeting_pipeline
 from db import (init_db, list_meetings, format_meetings_markdown, get_meeting)
+from asr import asr_status
 
 
 @asynccontextmanager
@@ -100,3 +101,7 @@ def meetings_detail(meeting_id: int):
         raise HTTPException(status_code=404, detail=f"회의 #{meeting_id}를 찾을 수 없습니다.")
     detail = format_meetings_markdown(row)
     return {"item": row, "markdown": detail, "result": detail}
+
+@app.get("/asr/status")
+def get_asr_status():
+    return asr_status()
