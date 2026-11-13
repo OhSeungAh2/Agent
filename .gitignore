@@ -1,3 +1,4 @@
 .env
 
 __pycache__/
+qwen_asr_test/
