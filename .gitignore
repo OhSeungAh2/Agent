@@ -2,3 +2,11 @@
 
 __pycache__/
 qwen_asr_test/
+
+# Local environments and runtime data
+.venv/
+/sample.wav
+/4_meeting_assistant/meetings.db
+/4_meeting_assistant/meetings.db-wal
+/4_meeting_assistant/meetings.db-shm
+/4_meeting_assistant/meetings.db-journal
