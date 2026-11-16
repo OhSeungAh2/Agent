@@ -6,14 +6,22 @@
 
 # 실행방법: uvicorn fastapi_back:app --reload --port 8000
 
+import uuid
+import shutil
+from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from graph import run_meeting_pipeline
 from db import (init_db, list_meetings, format_meetings_markdown, get_meeting)
-from asr import asr_status
+from asr import asr_status, transcribe_file
+
+# 업로드된 파일을 저장할 디렉토리 설정
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 
+# FastAPI 앱의 수명 주기 관리 (lifespan) 정의
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # db 초기화 시작
@@ -59,6 +67,14 @@ def summarize(text: str) -> str:
         return "회의록이 비어있습니다. 요약할 내용을 입력하세요."
     lines = [ln for ln in text.split("\n") if ln.strip()]
     return f"발화 {len(lines)}줄 요약 완료 / 앞부분: {lines[0] if lines else ''}"
+
+# 업로드된 파일을 서버에 저장하는 내부 함수
+def _save_upload(file: UploadFile) -> Path:
+    suffix = Path(file.filename or "audio.wav").suffix or ".wav"
+    dest = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    with dest.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+    return dest
 
 
 # FastAPI 엔드포인트: 회의 생성 및 요약
@@ -112,7 +128,32 @@ def get_asr_status():
 @app.post("/transcribe")
 async def transcribe_only(file: UploadFile = File(...)):
     path = _save_upload(file)
-    # ...
+    try:
+        tr = transcribe_file(path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {
+        "text": tr.text,
+        "mode": tr.mode,
+        "rms": tr.rms,
+        "peak": tr.peak,
+        "skipped_silence": tr.skipped_silence,
+        "detail": tr.detail,
+        "result": (
+            f"### 전사 결과\n\n"
+            f"- 모드: `{tr.mode}`\n"
+            f"- RMS: `{tr.rms:.4f}` / peak: `{tr.peak:.4f}`\n"
+            f"- {tr.detail}\n\n"
+            f"```\n{tr.text or '(빈 결과)'}\n```"
+        ),
+        "markdown": (
+            f"### 전사 결과\n\n"
+            f"- 모드: `{tr.mode}`\n"
+            f"- RMS: `{tr.rms:.4f}` / peak: `{tr.peak:.4f}`\n"
+            f"- {tr.detail}\n\n"
+            f"```\n{tr.text or '(빈 결과)'}\n```"
+        ),
+    }
 
 @app.post("/pipline_audio")
 async def run_pipeline_audio(

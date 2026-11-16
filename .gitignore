@@ -10,3 +10,4 @@ qwen_asr_test/
 /4_meeting_assistant/meetings.db-wal
 /4_meeting_assistant/meetings.db-shm
 /4_meeting_assistant/meetings.db-journal
+/4_meeting_assistant/uploads

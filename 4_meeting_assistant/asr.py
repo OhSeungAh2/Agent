@@ -1,10 +1,11 @@
 import os
 import numpy as np
+import torch
+
 # 관련 정보를 하나의 객체로 묶어 관리하기 위해 사용~
 from dataclasses import dataclass
 from pathlib import Path
 from dotenv import load_dotenv
-import torch
 from qwen_asr import Qwen3ASRModel
 from pathlib import Path
 
@@ -29,6 +30,8 @@ MOCK_TRANSCRIPT = (
     "김사과: 문서화는 반하나가 담당\n"
     "반하나: 그럼 김사과가 README 작성해야해"
 )
+
+_model = None
 
 
 # 오디오 특징을 저장하는 데이터 클래스
@@ -122,9 +125,99 @@ def load_audio_file(path: str | Path) -> tuple[np.ndarray, int]:
         wav = wav[: int(MAX_SECONDS * TARGET_SR)]
     return wav.astype(np.float32), sr
 
+# 오디오 파일의 RMS(Root Mean Square) 계산 함수
+def compute_rms(wav: np.ndarray) -> float:
+    if wav.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(wav ** 2)))
 
+# Peak Normalization 함수: 음성 신호의 최대 진폭을 기준으로 전체 신호의 크기를 조절하여 일정한 음량으로 맞추는 함수
+def peak_normalize(wav: np.ndarray, target: float=0.9) -> np.ndarray:
+    peak = float(np.max(np.abs(wav))) if wav.size else 0.0
+    if 1e-6 <= peak < target:
+        return (wav * (target / peak)).astype(np.float32)
+    return wav.astype(np.float32)
+
+# 오디오 파일의 RMS와 Peak를 측정하고, 무음 여부 판단 및 정규화 후 AudioFeatures 객체로 반환하는 함수
 def preprocess_audio_file(path: str | Path) -> AudioFeatures:
     wav, sr = load_audio_file(path)
+    # RMS: 음성 신호의 평균적인 크기를 측정
+    # Peak: 음성 신호에서 가장 큰 진폭을 측정(절댓값이 가장 큰 값)
+    # Peak Normalization: 가장 큰 진폭을 기준으로 음성 전체의 크기를 조절
+    # 음성 정규화를 하는 이유: 같은 사람이 같은 문장을 녹음하더라도 녹음 환경에 따라 음성 신호의 크기가 달라지기 때문(일정한 음량으로 맞추기 위해)
+    rms = compute_rms(wav)
+    # RMS가 SILENCE_RMS보다 작으면 무음으로 간주하고 정규화를 건너뛰도록 설정
+    peak = float(np.max(np.abs(wav))) if wav.size else 0.0
+    skipped = rms < SILENCE_RMS 
+    # 무음이 아닌 경우에만 Peak Normalization 수행
+    if not skipped:
+        wav = peak_normalize(wav)
+        peak = float(np.max(np.abs(wav))) if wav.size else 0.0
+        rms = compute_rms(wav)
+    # 전처리된 음성 데이터, 샘플링 레이트, RMS, Peak, 무음 여부, 파일 경로를 저장하는 객체
+    return AudioFeatures(
+        wav=wav,
+        sample_rate=sr,
+        rms=rms,
+        peak=peak,
+        skipped_silence=skipped,
+        path=str(path)
+    )
+
+# Qwen ASR 모델을 가져오는 내부 함수
+def _get_qwen_model():
+    global _model
+    if _model is not None:
+        return _model
+    if not torch.cuda.is_available():
+        raise RuntimeError("GPU 필요해!!")
+    # 해석: ASR_DTYPE 환경 변수가 "float16"이면 torch.float16을 사용하고, 그렇지 않으면 torch.bfloat16을 사용
+    dtype = (torch.float16 if os.getenv("ASR_DTYPE", "bfloat16").lower() == "float16" else torch.bfloat16)
+    _model = Qwen3ASRModel.from_pretrained(
+        ASR_MODEL_PATH, dtype=dtype, device="cuda", max_inference_batch_size=1, max_new_tokens=256
+    )
+    return _model
+
+#  무음 여부와 ASR 모드에 따라 음성을 텍스트로 변환하고 TranscriptResult 객체로 반환하는 함수
+def transcribe_features(features: AudioFeatures, mode: str | None = None) -> TranscriptResult:
+    # ASR 모드 결정 (mode가 지정되지 않았다면 resolve_asr_mode() 호출)
+    mode = mode or resolve_asr_mode()
+    # 무음으로 판단된 경우 ASR을 실행하지 않고 빈 텍스트 반환
+    if features.skipped_silence:
+        return TranscriptResult(
+            text="",
+            mode=mode,
+            rms=features.rms,
+            peak=features.peak,
+            skipped_silence=True,
+            detail=f"무음으로 건너뜀 (RMS={features.rms:.4f} < {SILENCE_RMS})"
+        )
+    # Qwen 모드인 경우 실제 ASR 모델로 음성을 텍스트로 변환
+    if mode == "qwen":
+        # _get_qwen_model(): Qwen-ASR 모델 가져오기
+        model = _get_qwen_model()
+        # transcribe(): 음성 데이터와 샘플링 레이트를 전달해 음성 인식 수행
+        result = model.transcribe(audio=(features.wav, features.sample_rate), language=ASR_LANGUAGE)
+        # 인식 결과에서 텍스트 추출 및 앞뒤 공백 제거
+        text = (getattr(result[0], "text", "") or "").strip()
+        # 실제 음성 인식 결과 반환
+        return TranscriptResult(
+            text=text,
+            mode="qwen",
+            rms=features.rms,
+            peak=features.peak,
+            skipped_silence=False,
+            detail=f"Qwen-ASR 실전사"
+        )
+    # Qwen 모드가 아닌 경우 Mock 텍스트 반환 (실제 음성 인식 수행하지 않음)
+    return TranscriptResult(
+        text=MOCK_TRANSCRIPT,
+        mode="mock",
+        rms=features.rms,
+        peak=features.peak,
+        skipped_silence=False,
+        detail=f"Mock 전사"
+    )
 
 # ASR 모드 결정 함수
 def resolve_asr_mode() -> str:
@@ -178,3 +271,4 @@ def asr_status() -> dict:
 
 def transcribe_file(path: str | Path) -> TranscriptResult:
     features = preprocess_audio_file(path)
+    return transcribe_features(features)
