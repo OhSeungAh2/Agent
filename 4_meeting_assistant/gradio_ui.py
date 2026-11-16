@@ -89,7 +89,7 @@ def transcribe_audio(audio) -> str:
             response = requests.post(
                 f"{API_URL}/transcribe",
                 files={"file": (Path(path).name, f, "application/octet-stream")},
-                timeout=100
+                timeout=600
             )
         response.raise_for_status()
         data = response.json()
@@ -110,7 +110,7 @@ def run_audio_pipeline(title:str, people:str, audio) -> str:
                 f"{API_URL}/pipeline_audio",
                 data = {"title": title, "people": people or ""},
                 files={"file": (Path(path).name, f, "application/octet-stream")},
-                timeout=100
+                timeout=600
             )
         response.raise_for_status()
         data = response.json()

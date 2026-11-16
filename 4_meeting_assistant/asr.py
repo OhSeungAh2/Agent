@@ -174,7 +174,7 @@ def _get_qwen_model():
     # 해석: ASR_DTYPE 환경 변수가 "float16"이면 torch.float16을 사용하고, 그렇지 않으면 torch.bfloat16을 사용
     dtype = (torch.float16 if os.getenv("ASR_DTYPE", "bfloat16").lower() == "float16" else torch.bfloat16)
     _model = Qwen3ASRModel.from_pretrained(
-        ASR_MODEL_PATH, dtype=dtype, device="cuda", max_inference_batch_size=1, max_new_tokens=256
+        ASR_MODEL_PATH, dtype=dtype, device_map="cuda:0", max_inference_batch_size=1, max_new_tokens=256
     )
     return _model
 

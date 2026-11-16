@@ -77,29 +77,27 @@ def _save_upload(file: UploadFile) -> Path:
     return dest
 
 
-# FastAPI 엔드포인트: 회의 생성 및 요약
+# 회의 생성 및 요약
 @app.post("/meeting")
 def create_meeting(request: MeetingRequest):
     return {"result": make_meeting(request.title, request.people)}
 
-# FastAPI 엔드포인트: 회의 요약
+# 회의 요약
 @app.post("/summarize")
 def create_summary(request: SummaryRequest):
     return {"result": summarize(request.text)}
 
-# FastAPI 엔드포인트: 전체 파이프라인 실행
+# 전체 파이프라인 실행
 @app.post("/pipeline")
 def run_pipeline(request: PipelineRequest):
     # 그래프에서 함수 만들어서 그 함수를 받아 처리하는 방법으로 만들거임
-    return {
-        "result": run_meeting_pipeline(
-            title = request.title,
-            people = request.people,
-            notes = request.notes
-        )
-    }
+    return run_meeting_pipeline(
+        title = request.title,
+        people = request.people,
+        notes = request.notes
+    )
 
-# FastAPI 엔드포인트: ASR 상태 확인
+# ASR 상태 확인
 @app.get("/meetings")
 def meetings_list(limit: int = 10):
     # list_meetings : 이건 db.py에 정의되어 있어야 함
@@ -110,7 +108,7 @@ def meetings_list(limit: int = 10):
         "result": format_meetings_markdown(rows)
     }
 
-# FastAPI 엔드포인트: 특정 회의 상세 정보 확인
+# 특정 회의 상세 정보 확인
 @app.get("/meetings/{meeting_id}")
 def meetings_detail(meeting_id: int):
     # get_meeting : 이건 db.py에 정의되어 있어야 함
@@ -120,11 +118,12 @@ def meetings_detail(meeting_id: int):
     detail = format_meetings_markdown(row)
     return {"item": row, "markdown": detail, "result": detail}
 
-
+# ASR 상태 확인
 @app.get("/asr/status")
 def get_asr_status():
     return asr_status()
 
+# 오디오 파일을 업로드하여 전사만 수행
 @app.post("/transcribe")
 async def transcribe_only(file: UploadFile = File(...)):
     path = _save_upload(file)
@@ -155,11 +154,29 @@ async def transcribe_only(file: UploadFile = File(...)):
         ),
     }
 
-@app.post("/pipline_audio")
+# 오디오 파일을 업로드하여 회의 파이프라인 실행
+@app.post("/pipeline_audio")
 async def run_pipeline_audio(
     title: str = Form(...),
     people: str = Form(""),
     file: UploadFile = File(...)
 ):
     path = _save_upload(file)
-    # ...
+    try:
+        tr = transcribe_file(path)
+        if not tr.text.strip():
+            raise HTTPException(status_code=400, detail="음성 인식 결과없음")
+        result = run_meeting_pipeline(
+            title=title,
+            people=people,
+            notes=tr.text,
+            audio_path=str(path)
+        )
+        result["transcription"] = tr.text
+        result["asr_mode"] = tr.mode
+        result["audio_rms"] = tr.rms
+        result["audio_peak"] = tr.peak
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="음성 파이프라인 처리 오류")

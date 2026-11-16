@@ -10,7 +10,6 @@
 # 내보내면 프론트가 받아서 화면에 표시함
 
 from typing import TypedDict
-from unittest import result
 from langgraph.graph import StateGraph, START, END
 from db import save_meeting
 
@@ -25,7 +24,33 @@ class MeetingState(TypedDict):
     summary: str
     actions: str
     result: str
+    meeting_id: int
+    audio_path: str
+    audio_rms: float
+    audio_peak: float
+    asr_mode: str
+    transcript: str
+    asr_detail: str
 
+# 초기 상태를 생성하는 내부 함수
+def _initial_state(title: str, people: str, notes: str = "", audio_path: str = "") -> MeetingState:
+    return{
+        "title": title,
+        "people": people,
+        "notes": notes,
+        "error": "",
+        "meeting_info": "",
+        "summary": "",
+        "actions": "",
+        "result": "",
+        "meeting_id": 0,
+        "audio_path": audio_path or "",
+        "audio_rms": 0.0,
+        "audio_peak": 0.0,
+        "asr_mode": "",
+        "transcript": "",
+        "asr_detail": ""
+    }
 
 # 첫번째 노드: 입력 검증
 def validate_input(state: MeetingState) -> MeetingState:
@@ -96,7 +121,7 @@ def route_after_compose(state: MeetingState) -> str:
 def save_to_db(state: MeetingState) -> MeetingState:
     meeting_id = save_meeting(
         title = state["title"],
-        people = (state.get('people') or "").strip(""),
+        people = (state.get("people") or "").strip(),
         notes = state["notes"],
         summary = state["summary"],
         actions = state["actions"],
@@ -127,7 +152,7 @@ def build_meeting_graph():
     graph.add_conditional_edges(
         "compose", route_after_compose, {"save": "save_to_db", "error": END}
     )
-    graph.add_edge("compose", END)
+    graph.add_edge("save_to_db", END)
 
     return graph.compile()
 
@@ -136,19 +161,21 @@ def build_meeting_graph():
 meeting_app = build_meeting_graph()
 
 
-def run_meeting_pipeline(title: str, people: str, notes: str) -> str:
-    final_state = meeting_app.invoke(
-        {
-            "title": title,
-            "people": people,
-            "notes": notes,
-            "error": "",
-            "meeting_info": "",
-            "summary": "",
-            "actions": "",
-            "result": ""
-        }
-    )
-    return final_state["result"]
+# 회의 파이프라인 실행 함수: 제목, 참가자, 회의록, 오디오 경로를 받아 최종 상태를 반환함
+def run_meeting_pipeline(title: str, people: str, notes: str = "", audio_path: str = "") -> dict:
+    final_state = meeting_app.invoke(_initial_state(
+        title=title,
+        people=people,
+        notes=notes,
+        audio_path=audio_path
+    ))
+    return {
+        "result": final_state["result"],
+        "meeting_id": final_state.get("meeting_id") or 0,
+        "asr_mode": final_state.get("asr_mode") or "",
+        "transcript": final_state.get("transcript") or "",
+        "notes": final_state.get("notes") or "",
+        "audio_rms": final_state.get("audio_rms") or 0.0
+    }
 
     
