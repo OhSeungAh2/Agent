@@ -83,6 +83,7 @@ def run_pipeline(request: PipelineRequest):
         )
     }
 
+# FastAPI 엔드포인트: ASR 상태 확인
 @app.get("/meetings")
 def meetings_list(limit: int = 10):
     # list_meetings : 이건 db.py에 정의되어 있어야 함
@@ -93,6 +94,7 @@ def meetings_list(limit: int = 10):
         "result": format_meetings_markdown(rows)
     }
 
+# FastAPI 엔드포인트: 특정 회의 상세 정보 확인
 @app.get("/meetings/{meeting_id}")
 def meetings_detail(meeting_id: int):
     # get_meeting : 이건 db.py에 정의되어 있어야 함
@@ -102,6 +104,21 @@ def meetings_detail(meeting_id: int):
     detail = format_meetings_markdown(row)
     return {"item": row, "markdown": detail, "result": detail}
 
+
 @app.get("/asr/status")
 def get_asr_status():
     return asr_status()
+
+@app.post("/transcribe")
+async def transcribe_only(file: UploadFile = File(...)):
+    path = _save_upload(file)
+    # ...
+
+@app.post("/pipline_audio")
+async def run_pipeline_audio(
+    title: str = Form(...),
+    people: str = Form(""),
+    file: UploadFile = File(...)
+):
+    path = _save_upload(file)
+    # ...
